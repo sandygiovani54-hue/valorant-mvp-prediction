@@ -208,7 +208,7 @@ page = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Filter")
-min_games = st.sidebar.slider("Minimal jumlah game", 5, 50, 10)
+min_games = st.sidebar.slider("Minimal jumlah game", 1, 50, 10)
 
 raw_df, player_df, missing_cols = load_and_process_data(min_games, file_bytes, file_name)
 
