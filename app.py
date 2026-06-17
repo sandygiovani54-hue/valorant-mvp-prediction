@@ -45,9 +45,51 @@ st.set_page_config(
 # ================================================================
 # 1. LOAD & PEMBERSIHAN DATA (cached agar tidak dihitung ulang)
 # ================================================================
+REQUIRED_COLS = ['team', 'player', 'rating', 'acs', 'kill', 'death',
+                  'assist', 'kast%', 'adr', 'hs%', 'fk', 'fd']
+
+def read_uploaded_bytes(file_bytes, file_name):
+    """Baca bytes file upload (csv/xlsx) dengan deteksi separator otomatis untuk csv."""
+    import io
+    name = file_name.lower()
+    if name.endswith('.xlsx') or name.endswith('.xls'):
+        return pd.read_excel(io.BytesIO(file_bytes))
+
+    # latin1 selalu berhasil decode (tidak pernah UnicodeDecodeError)
+    text = file_bytes.decode('latin1')
+
+    best_df, best_cols = None, 1
+    for sep in [';', ',', '\t']:
+        try:
+            df_try = pd.read_csv(io.StringIO(text), sep=sep)
+            if len(df_try.columns) > best_cols:
+                best_df, best_cols = df_try, len(df_try.columns)
+        except Exception:
+            continue
+    if best_df is not None:
+        return best_df
+    return pd.read_csv(io.StringIO(text))
+
+
+def validate_columns(df):
+    missing = [c for c in REQUIRED_COLS if c not in df.columns]
+    return missing
+
+
 @st.cache_data
-def load_and_process_data(min_games):
-    df = pd.read_csv("player_stats_2023.csv", sep=';', encoding='latin1')
+def load_and_process_data(min_games, file_bytes=None, file_name=None):
+    """
+    Jika file_bytes diisi (dari upload pengguna), data diproses dari file itu.
+    Jika None, pakai dataset bawaan player_stats_2023.csv.
+    """
+    if file_bytes is not None:
+        df = read_uploaded_bytes(file_bytes, file_name)
+    else:
+        df = pd.read_csv("player_stats_2023.csv", sep=';', encoding='latin1')
+
+    missing = validate_columns(df)
+    if missing:
+        return None, None, missing
 
     def clean_col(col):
         return pd.to_numeric(
@@ -78,7 +120,7 @@ def load_and_process_data(min_games):
     ).reset_index()
 
     player_df = player_df[player_df['games'] >= min_games].dropna().reset_index(drop=True)
-    return df, player_df
+    return df, player_df, None
 
 
 @st.cache_resource
@@ -137,6 +179,27 @@ def train_model(player_df):
 st.sidebar.title("🎯 Valorant MVP")
 st.sidebar.caption("Prediksi MVP dengan Regresi Linear")
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("Dataset")
+uploaded_file = st.sidebar.file_uploader(
+    "Upload dataset sendiri (opsional)",
+    type=['csv', 'xlsx', 'xls'],
+    help="Format harus punya kolom: player, team, rating, acs, kill, death, "
+         "assist, kast%, adr, hs%, fk, fd"
+)
+
+with st.sidebar.expander("📋 Format kolom yang dibutuhkan"):
+    st.code(", ".join(REQUIRED_COLS), language=None)
+
+if uploaded_file is not None:
+    file_bytes = uploaded_file.getvalue()
+    file_name = uploaded_file.name
+    st.sidebar.success(f"✅ Memakai file: {file_name}")
+else:
+    file_bytes = None
+    file_name = None
+    st.sidebar.info("📁 Memakai dataset bawaan (player_stats_2023.csv)")
+
 page = st.sidebar.radio(
     "Navigasi",
     ["📊 Dashboard", "📈 Statistik Deskriptif", "🧪 Uji Asumsi",
@@ -147,7 +210,23 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Filter")
 min_games = st.sidebar.slider("Minimal jumlah game", 5, 50, 10)
 
-raw_df, player_df = load_and_process_data(min_games)
+raw_df, player_df, missing_cols = load_and_process_data(min_games, file_bytes, file_name)
+
+if missing_cols:
+    st.error(
+        f"❌ File yang diupload tidak punya kolom yang dibutuhkan: "
+        f"**{', '.join(missing_cols)}**\n\n"
+        f"Pastikan file kamu punya semua kolom ini: {', '.join(REQUIRED_COLS)}"
+    )
+    st.stop()
+
+if player_df is None or len(player_df) < 5:
+    st.error(
+        "❌ Data tidak cukup setelah difilter. Coba turunkan nilai "
+        "**Minimal jumlah game** di sidebar, atau cek ulang dataset kamu."
+    )
+    st.stop()
+
 results = train_model(player_df)
 
 features  = results['features']
