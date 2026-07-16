@@ -3,14 +3,6 @@
 STREAMLIT APP — PREDIKSI MOST VALUABLE PLAYER (MVP)
 PADA GAME VALORANT MENGGUNAKAN REGRESI LINEAR
 ================================================================
-Cara jalanin di lokal:
-    streamlit run app.py
-
-File yang harus ada di folder yang sama:
-    - app.py
-    - player_stats_2023.csv
-    - requirements.txt
-================================================================
 """
 
 import pandas as pd
